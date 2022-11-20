@@ -1,0 +1,206 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta http-equiv="X-UA-Compatible" content="IE=edge">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <script src="./libs/d3.js"></script>
+    <script src="https://d3js.org/topojson.v1.min.js"></script>
+    <title>Part 1</title>
+    <style>
+        #tooltip {
+            position: absolute;
+            opacity: 0;
+            top: 0;
+            left: 0;
+            width: auto;
+            padding: 10px;
+            background: white;
+            font-family: sans-serif;
+            font-size: medium;
+            border-radius: 2px;
+            line-height: 1;
+        }
+        svg {
+            width: 70vw;
+            height: 70vh;
+            background-color: #f5f5f500;
+            margin: auto;
+            display: block;
+            border: black;
+        }
+        
+        path {
+            stroke-width: .5px;
+            stroke: black
+        }
+        
+        path:hover {
+            opacity: .6;
+            stroke: black;
+            stroke-width: 4px;
+        }
+        #container{
+            display: flex;
+            height: 100%;
+            justify-content: center;
+            align-items: center;
+        }
+        .center {
+  margin: auto;
+  width: 60%;
+  justify-content: center;
+  padding: 10px;
+  align-items: center;
+  text-align: center;
+}
+.tooltipData {
+    position: relative;
+        top: 0px;
+        right: 0px;
+}
+    </style>
+</head>
+
+<body>
+    <div id="tooltip"></div>
+    
+    <div class="center">
+        <h1>Massachussets Population 2010</h1>
+        <h3>Amit Rane</h3>
+      </div>
+    
+                       
+    
+    <div id="container">
+    </div>
+    <script>
+     
+        const window_dims = {
+            width: window.innerWidth/2,
+            height: window.innerHeight/2
+        };
+        const margin = window_dims.width * .05
+
+
+      
+        const MA_counties = "./data/towns.topojson"
+            // gini index per county
+        const gini_index = "./data/gini_index.csv"
+
+
+        // open both files
+        Promise.all([
+            d3.json(MA_counties),
+            d3.csv(gini_index)
+    
+        ]).then(data => {
+            // topology data
+
+
+            // gini index data
+            // gini index in 2010
+            let gini =d3.group(data[1].filter(d=>d.year==="2010"),d=>d.FIPS_CO.slice(-5))
+            
+            const topo_data = data[0];
+            const geojson = topojson.feature(topo_data, topo_data.objects.ma);
+            
+            console.table(geojson.features.map(d=>d.properties.SUM_ACRES))
+            //// See SUM_ACRES
+            // console.table(geojson.features.map(d=>d.properties.SUM_SQUARE))
+            //// extra info: Check correctness of data:
+            console.log(geojson.features.filter(d=>d.properties.TOWN==="GRANVILLE")[0].properties.SUM_SQUARE) 
+
+
+
+
+
+
+            const projections = [
+                d3.geoAzimuthalEqualArea(), //Azimuthal projections project the sphere directly onto a plane.
+                d3.geoAlbersUsa(), // USA conic projection
+                d3.geoAlbers(), // equal-area conic projection
+                d3.geoMercator(), // cylindrical projection
+                d3.geoNaturalEarth1(), // pseudocylindrical projection designed by Tom Patterson
+                d3.geoEqualEarth(), // Equal Earth projection, by Bojan Šavrič et al., 2018.
+                d3.geoConicEqualArea(), //equal-area conic projection
+                d3.geoEquirectangular(), //Cylindrical Projections
+                d3.geoOrthographic()
+            ]
+
+
+            const geoPath_generator = d3.geoPath()
+                .projection(projections[3].fitSize([window_dims.width - margin, window_dims.height - margin], geojson))
+
+            /*-------------------------------------------------------*/
+            /*----------------------Color Scaling--------------------*/
+            /*-------------------------------------------------------*/
+            ////https://observablehq.com/@d3/working-with-color
+            var colorInterpolator = d3.interpolateRgbBasis(["blue", "red", "purple"])
+            let logScale = d3.scaleLog()
+                .domain(d3.extent(geojson.features, (d) => {
+                    return (d['properties']['POP2010']/d['properties']['SUM_SQUARE'])
+                }))
+            
+            let linearScale = d3.scaleLinear()
+                .domain(d3.extent(geojson.features, (d) => {
+                    return (d['properties']['POP2010']/d['properties']['SUM_SQUARE'])
+                }))
+
+            // gini index scale linear
+
+            let linearScaleGiniIndex = d3.scaleLinear()
+                .domain(d3.extent([...gini],d=>d[1][0].Estimate_Gini_Index))
+
+    
+            const tooltip = d3.select("#tooltip");
+
+            let svg = d3.select("#container").append("svg")
+                .attr("viewBox",`0 0 ${window_dims.width} ${window_dims.height}`)
+                .attr("width", "50vw")
+                .attr("height", "40vw")
+
+            svg.selectAll("path")
+                .data(geojson.features)
+                .enter()
+                .append("path")
+                .attr("d", d => geoPath_generator(d))
+                .attr("fill", d => colorInterpolator(logScale((d['properties']['POP2010']/d['properties']['SUM_SQUARE']))))
+                .attr("fill", d =>{
+
+                    return colorInterpolator((logScale((d['properties']['POP2010']/d['properties']['SUM_SQUARE']))));
+                })
+
+                .on("mouseenter", (m, d) => {
+                    console.log(d['properties'])
+                    tooltip.transition()
+                        .duration(200)
+                        .style("opacity", .9)
+                    tooltip.html(
+                    "<div class='tooltipData'>TOWN: "+d['properties']['TOWN']+"</div>" +
+                    "<div class='tooltipData'>POP2010: "+d['properties']['POP2010']+"</div>" +
+                    "<div class='tooltipData'>Sum square: "+d['properties']['SUM_SQUARE']+"</div>" +
+                    "<div class='tooltipData'>Population over area: "+d['properties']['POP2010']/d['properties']['SUM_SQUARE']+"</div>" +
+                    "<div class='tooltipData'>Gini_index[2010]: "+gini.get(d.properties.FIPS_STCO.toString())[0]['Estimate_Gini_Index']+"</div>" +
+                    "<div class='tooltipData'></div>")
+                        .style("left", m.clientX + "px")
+                        .style("top", m.clientY + "px")
+                  
+                })
+                .on("mousemove", (m, d) => {
+                    
+                    d3.select('#tooltip')
+                      .style("opacity",.8)
+
+                })
+                .on("mouseout", (m, d) => {
+                    tooltip.transition()
+                        .duration(3000)
+                        .style("opacity", 0)
+                })
+        })
+    </script>
+</body>
+
+</html>
